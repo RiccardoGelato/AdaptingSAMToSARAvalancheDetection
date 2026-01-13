@@ -1,0 +1,101 @@
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Avalanche Segmentation{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    {% block head %}
+    <!-- Additional head content specific to each page -->
+    {% endblock %}
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            margin: 0;
+            padding: 0; /* Reset padding */
+            font-family: Arial, sans-serif;
+            height: 100vh;
+            overflow-y: auto; /* Allow vertical scrolling */
+        }
+        .app-bar {
+            background-color: #333;
+            color: white;
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            z-index: 1000;
+            box-sizing: border-box; /* Ensure padding is included in the width */
+        }
+        .app-bar a {
+            color: white;
+            text-decoration: none;
+            margin: 0 10px;
+        }
+        .main-content {
+            display: flex;
+            flex: 1;
+            padding-top: 40px; /* Use padding-top instead of margin-top */
+            overflow: auto;
+            background-color: #ffffff;
+        }
+        
+        /*{
+            display: flex;
+            flex: 1;
+            margin-top: 60px; /* Adjust based on side-menu width */
+            /*background-image: url("{{ url_for('static', filename='pattern.jpg') }}");
+            background-repeat: repeat;
+            background-size: 200px 200px; /* Adjust these values to change pattern size */
+            /*overflow: hidden;
+        }*/
+        
+        .side-menu {
+            width: 250px;
+            background-color: #f4f4f4;
+            padding: 20px;
+            box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+            position: fixed;
+            top: 40px; /* Adjust based on app-bar height */
+            bottom: 0;
+            overflow-y: auto;
+        }
+        .content {
+            flex: 1;
+            padding: 20px;
+            margin-left: 300px; /* Adjust based on side-menu width */
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-bar">
+        <div class="app-title">Avalanche Segmentation</div>
+        <div class="nav-links">
+            <a href="{{ url_for('home') }}">Home</a>
+            <a href="{{ url_for('upload') }}">Upload</a>
+            <!--<a href="{{ url_for('menu') }}">Menu</a>-->
+            <a href="{{ url_for('uploaded_files') }}">Uploaded Files</a>
+        </div>
+    </div>
+    <div class="main-content">
+        <div class="side-menu">
+            {% block side_menu %}
+            <!-- Side menu content specific to each page -->
+            {% endblock %}
+        </div>
+        <div class="content">
+            {% block content %}
+            <!-- Main content specific to each page -->
+            {% endblock %}
+        </div>
+    </div>
+</body>
+</html>

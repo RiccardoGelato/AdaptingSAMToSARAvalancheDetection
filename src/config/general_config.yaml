@@ -6,6 +6,7 @@ paths:
   # The specific models to be loaded
   checkpoint_vv: "./checkpoints/firstencoder"
   checkpoint_vh: "./checkpoints/secondencoder"
+  checkpoint_sfg: "./checkpoints/sfg"
 
 neptune:
   project: "your-username/your-project-name"

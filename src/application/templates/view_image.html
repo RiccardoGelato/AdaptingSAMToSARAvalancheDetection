@@ -1,0 +1,1054 @@
+{% extends "base.html" %}
+
+{% block title %}View Image - Avalanche Segmentation{% endblock %}
+
+{% block head %}
+<!-- Additional head content specific to the view image page -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
+<style>
+    .container {
+        display: flex;
+        align-items: flex-start;
+        gap: 20px; /* Adjust the gap value as needed */
+    }
+    .image-container {
+        position: relative;
+        display: inline-block;
+        margin-top: 20px; /* Add margin to the top of the image */
+    }
+    .dem-container {
+        display: flex;
+        align-items: flex-start; /* adjust to center if needed */
+        margin-top: 20px; /* ensures DEM starts at the same height as the image */
+    }
+    img {
+        display: block;
+        max-width: 100%;
+        height: auto;
+    }
+    canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+    }
+    .slider-container {
+        position: fixed; /* Fix the position of the slider */
+        top: 20px; /* Add margin to the top of the slider */
+        left: 20px; /* Add margin to the left of the slider */
+        height: calc(100% - 40px); /* Adjust height to fit within the viewport */
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        background-color: #f0f0f0; /* Optional: Add background color to the slider container */
+        padding: 10px; /* Optional: Add padding to the slider container */
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); /* Optional: Add shadow to the slider container */
+    }
+    .slider {
+        width: 100%; /* Make the slider take the full width of the container */
+    }
+    .mask-image {
+        position: absolute;
+        top: 0;
+        left: 0;
+        opacity: 0.5; /* Set the initial opacity for transparency */
+    }
+
+    /* New CSS for active buttons */
+    button.active {
+        border: 1px solid #ccc;
+        /*background-color: #fafafa;*/
+        transform: scale(1.05);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        transition: transform 0.5s;
+        border-radius: 4px;
+    }
+
+    /* Active timer button becomes round */
+    button.active-timer {
+        border-radius: 50%;
+        background-color: #007BFF;
+        color: white;
+        width: 80px;
+        height: 80px;
+        font-size: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transform: scale(1.1);
+        transition: transform 0.2s, border-radius 0.2s, background-color 0.2s;
+    }
+
+    
+    #tooltip {
+        position: fixed;
+        /* Remove fixed right/top so that our dynamic positioning isn't overridden */
+        /* right: 20px;
+        top: 50%;
+        transform: translateY(-50%); */
+        background: rgba(0,0,0,0.8);
+        color: #fff;
+        padding: 8px 12px;
+        border-radius: 4px;
+        font-size: 14px;
+        display: none;
+        z-index:  1000; /* Ensure tooltip is above other elements */
+        white-space: nowrap;    /* Prevents the tooltip text from wrapping */
+        max-width: 200px;       /* Limit the width if needed */
+    }
+
+    #toggle-completion-btn,
+    #save-mask-button {
+        display: block;
+        width: 100%;
+        margin-bottom: 8px; /* spacing between rows */
+        box-sizing: border-box;
+    }
+</style>
+{% endblock %}
+
+{% block side_menu %}
+<!-- Side menu content for the view image page -->
+<p>Use the slider to adjust the image size.</p>
+<input type="range" id="width-slider" class="slider" min="100" max="1000" value="512">
+<p>Transparency:</p>
+<input type="range" id="combined-transparency-slider" class="slider" min="0" max="100" value="50">
+<button id="toggle-completion-btn" data-tooltip="Mark as Completed">Not Completed</button>
+<button id="save-mask-button" data-tooltip="Save Mask">Save Mask</button>
+</button>
+<div class="mask-container"> 
+    <p>Toggle Segmentation Mode:</p>
+    <button id="segmentation-mode-button" data-tooltip="Segmentation Mode">
+        <i class="fa fa-vector-square"></i>
+    </button>
+    <button id="mask-editing-mode-button" data-tooltip="Mask Editing Mode">
+        <i class="fa fa-edit"></i>
+    </button>
+    <form id="segment-form" action="{{ url_for('segment_image', filename=filename) }}" method="POST" onsubmit="return validateForm()">
+        <input type="hidden" name="x1" id="x1">
+        <input type="hidden" name="y1" id="y1">
+        <input type="hidden" name="x2" id="x2">
+        <input type="hidden" name="y2" id="y2">
+        <button type="submit" data-tooltip="Segment Image">Segment Image</button>
+    </form>
+    <div class="mask-container" id="maskEditButtons" style="display: none;">
+        <button id="draw-mode-button" data-tooltip="Draw Mode">
+            <i class="fa-solid fa-paintbrush"></i>
+        </button>
+        <button id="erase-mode-button" data-tooltip="Erase Mode">
+            <i class="fa-solid fa-eraser"></i>
+        </button>
+        <button id="undo-button" data-tooltip="Undo Last Stroke">
+            <i class="fa-solid fa-rotate-left"></i>
+        </button>
+        <button id="fill-button" data-tooltip="Fill Mode">
+            <i class="fa-solid fa-fill"></i>
+        </button>
+    </div>
+</div> 
+{% if mask_filename %}
+<div class="mask-container">
+    <p>Toggle Mask:</p>
+    <input type="checkbox" id="toggle-mask" checked>
+    <img id="mask-thumbnail" src="{{ url_for('serve_from_temp', filename=mask_filename) }}" alt="Mask Thumbnail" style="width: 100px; height: auto;">
+    <p>Cutoff Threshold (%):</p>
+    <input type="range" id="cutoff-slider" class="slider" min="0" max="100" value="50">
+</div>
+{% endif %}
+
+
+{% if union_mask_filename %}
+<div class="mask-container">
+    <p>Toggle Union Mask:</p>
+    <input type="checkbox" id="toggle-union-mask" checked>
+    <img id="union-mask-thumbnail" src="{{ url_for('uploaded_file', filename=union_mask_filename) }}" alt="Union Mask Thumbnail" style="width: 100px; height: auto;">
+</div>
+{% endif %}
+<!--<p>USE THIS BUTTONS TO START THE TIMER</p>
+<div style="margin-top: 10px;">
+  <button id="start-model-segmentation" data-tooltip="Use Model Segmentation">Use Model</button>
+  <button id="start-manual-segmentation" data-tooltip="Use Manual Segmentation">Manual</button>
+</div>-->
+
+{% endblock %}
+
+{% block content %}
+<!-- Tooltip container -->
+<div id="tooltip"></div>
+<!-- Main content for the view image page -->
+<div class="container">
+    <div class="image-container">
+        <img id="image" src="{{ url_for('uploaded_file', filename=filename) }}" alt="{{ filename }}">
+        <canvas id="canvas"></canvas>
+        <!-- The combined mask image that's displayed on top when at least one mask is checked -->
+        <img id="combined-mask-image" class="mask-image" src="" alt="Combined Mask" style="display: none;">
+        <canvas id="drawing-canvas"></canvas>
+    </div>
+    {% if dem_filename %}
+    <div class="dem-container">
+        <img id="dem-image" src="{{ url_for('dem_image', filename=dem_filename) }}"
+             alt="DEM Image" >
+    </div>
+    {% endif %}
+</div>
+
+<script>
+    let currentMode = 'segmentation';
+    const image = document.getElementById('image');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const segmentationModeButton = document.getElementById('segmentation-mode-button');
+    const maskEditingModeButton = document.getElementById('mask-editing-mode-button');
+    const drawingCanvas = document.getElementById('drawing-canvas');
+    const drawingCtx = drawingCanvas.getContext('2d');
+    const widthSlider = document.getElementById('width-slider');
+    const toggleMask = document.getElementById('toggle-mask');
+    const toggleUnionMask = document.getElementById('toggle-union-mask');
+    const combinedMaskImage = document.getElementById('combined-mask-image');
+    const combinedTransparencySlider = document.getElementById('combined-transparency-slider');
+    const cutoffSlider = document.getElementById('cutoff-slider');
+    const saveMaskButton = document.getElementById('save-mask-button');
+    const drawModeButton = document.getElementById('draw-mode-button');
+    const eraseModeButton = document.getElementById('erase-mode-button');
+    const fillButton = document.getElementById('fill-button');
+    const maskEditButtons = document.getElementById('maskEditButtons'); // show/hide based on mode
+    const segmentForm = document.getElementById('segment-form'); // show/hide based on mode
+    const maskThumbnail = document.getElementById('mask-thumbnail');
+    const unionMaskThumbnail = document.getElementById('union-mask-thumbnail');
+    let startX, startY, endX, endY, isDrawing = false;
+    let drawMode = true; // true for draw mode, false for erase mode
+    // Global persistent canvas to store the combined mask edits.
+    let persistentMaskCanvas = document.createElement('canvas');
+    let persistentMaskCtx = persistentMaskCanvas.getContext('2d');
+    let combinedMaskLocal = document.createElement('image');
+    const undoButton = document.getElementById('undo-button');
+    // Flag to indicate whether the persistent canvas has been seeded already
+    let persistentCanvasSeeded = false;
+
+    // Global history stack for stroke states
+    let strokeHistory = [];
+
+    // push a snapshot only if different from last; keep max length
+    function pushHistorySnapshot() {
+        try {
+            const url = persistentMaskCanvas.toDataURL();
+            if (strokeHistory.length === 0 || strokeHistory[strokeHistory.length - 1] !== url) {
+                strokeHistory.push(url);
+                const MAX_HISTORY = 50;
+                if (strokeHistory.length > MAX_HISTORY) strokeHistory.shift();
+            }
+        } catch (e) {
+            console.warn("Failed to push history snapshot:", e);
+        }
+    }
+
+    // Function to apply the local cutoff on the probability map
+    function localApplyCutoff() {
+        const cutoff = cutoffSlider.value;
+        const thresh = cutoff / 100 * 255;
+        // Get the original image data from the probability canvas
+        const ctxProb = persistentMaskCanvas.getContext('2d');
+        const imageData = ctxProb.getImageData(0, 0, persistentMaskCanvas.width, persistentMaskCanvas.height);
+        const data = imageData.data;
+        for (let i = 0; i < data.length; i += 4) {
+            // Assuming the mask is grayscale (R=G=B), threshold the red channel
+            const value = data[i];
+            const newVal = (value > thresh) ? 255 : 0;
+            data[i] = newVal;
+            data[i + 1] = newVal;
+            data[i + 2] = newVal;
+            // Leave alpha unchanged.
+        }
+        // Draw the new thresholded image onto a temporary canvas
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = persistentMaskCanvas.width;
+        tempCanvas.height = persistentMaskCanvas.height;
+        tempCanvas.getContext('2d').putImageData(imageData, 0, 0);
+        // Update the combined mask display.
+        combinedMaskImage.src = tempCanvas.toDataURL();
+    }
+
+    // Function to update combined mask based on checkbox selections
+    function updateCombinedMask() {
+        const includeMask = toggleMask ? toggleMask.checked : false;
+        const includeUnionMask = toggleUnionMask ? toggleUnionMask.checked : false;
+        fetch('{{ url_for("combine_masks") }}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                filename: '{{ filename }}',
+                include_mask: includeMask,
+                include_union_mask: includeUnionMask
+            })
+        })
+        .then(response => {
+            if(response.ok) {
+                return response.blob();
+            } else {
+                combinedMaskImage.style.display = 'none';
+                throw new Error("No masks to combine");
+            }
+        })
+        .then(blob => {
+            const url = URL.createObjectURL(blob);
+            combinedMaskImage.src = url;
+            combinedMaskImage.style.display = 'block';
+            // Every time the combined mask image loads, update the persistent canvas base
+            combinedMaskImage.onload = () => {
+                updatePersistentMaskBase();
+                combinedMaskImage.onload = null;
+            };
+        })
+        .catch(err => {
+            console.error(err);
+            if(maskThumbnail || unionMaskThumbnail) {
+                // If there are no masks to combine, hide the combined mask image
+                combinedMaskImage.style.display = 'none';
+
+            } else{
+                // Initialize the persistent canvas with a black background
+                const w = image.naturalWidth, h = image.naturalHeight;
+                persistentMaskCtx.clearRect(0, 0, w, h);
+                persistentMaskCtx.fillStyle = 'black';
+                persistentMaskCtx.fillRect(0, 0, w, h);
+                // Update the combined mask display
+                combinedMaskImage.src = persistentMaskCanvas.toDataURL();
+                if (currentMode === 'mask-editing') {
+                    combinedMaskImage.style.display = 'block';
+                }else{
+                    combinedMaskImage.style.display = 'none';
+                }
+            }
+            
+        });
+    }
+
+
+
+    // Update the combined mask whenever either checkbox changes
+    if(toggleMask){
+        toggleMask.addEventListener('change', updateCombinedMask);
+    }
+    if(toggleUnionMask){
+        toggleUnionMask.addEventListener('change', updateCombinedMask);
+    }
+
+    // Transparency slider: adjust the combined mask opacity
+    if(combinedTransparencySlider){
+        combinedTransparencySlider.addEventListener('input', () => {
+            const opacity = combinedTransparencySlider.value / 100;
+            combinedMaskImage.style.opacity = opacity;
+        });
+    }
+
+    // Update cutoff slider display and trigger mask update
+    if(cutoffSlider){
+        cutoffSlider.addEventListener('input', () => {
+            localApplyCutoff();
+        });
+    }
+
+    
+    function setMode(mode) {
+        currentMode = mode;
+        if (mode === 'segmentation') {
+            segmentationModeButton.classList.add('active');
+            maskEditingModeButton.classList.remove('active');
+            drawingCanvas.style.pointerEvents = 'none'; 
+            canvas.style.pointerEvents = 'auto'; 
+            // Hide the drawing controls.
+            maskEditButtons.style.display = 'none';
+            segmentForm.style.display = 'block';
+            if (!maskThumbnail && !unionMaskThumbnail){
+                combinedMaskImage.style.display = 'none';
+            }
+        } else { // mask-editing
+            maskEditingModeButton.classList.add('active');
+            segmentationModeButton.classList.remove('active');
+            drawingCanvas.style.pointerEvents = 'auto'; 
+            canvas.style.pointerEvents = 'none';
+            // Show the drawing controls.
+            maskEditButtons.style.display = 'block'; 
+            segmentForm.style.display = 'none';
+            if (!maskThumbnail && !unionMaskThumbnail){
+                combinedMaskImage.style.display = 'block';
+            }
+        }
+    }
+ 
+    // initialize UI to reflect the starting mode
+    setMode(currentMode);
+
+    segmentationModeButton.addEventListener('click', () => { 
+        currentMode = 'segmentation'; 
+        setMode(currentMode);
+        // Also remove active state from drawing tools (if any)
+        drawModeButton.classList.add('active');
+        eraseModeButton.classList.remove('active');
+        fillButton.classList.remove('active');
+    });
+
+    maskEditingModeButton.addEventListener('click', () => { 
+        currentMode = 'mask-editing'; 
+        setMode(currentMode);
+
+        // Seed history only if empty
+        if (!persistentCanvasSeeded) {
+            updatePersistentMaskBase();
+            persistentCanvasSeeded = true;
+        }
+        strokeHistory = []; // Clear the history stack when switching modes
+        // Seed the persistent canvas with the combined mask image
+        strokeHistory.push(persistentMaskCanvas.toDataURL());
+
+        drawModeButton.classList.remove('active');
+        eraseModeButton.classList.remove('active');
+        fillButton.classList.remove('active');
+        
+    }); 
+
+    // Function to update the persistent canvas base using the new combined mask
+    function updatePersistentMaskBase() {
+        const w = image.naturalWidth, h = image.naturalHeight;
+        // Ensure we use the normal composite operation
+        persistentMaskCtx.globalCompositeOperation = 'source-over';
+        // Clear the persistent canvas.
+        persistentMaskCtx.clearRect(0, 0, w, h);
+        // Optional: fill with black as a base
+        persistentMaskCtx.fillStyle = 'black';
+        persistentMaskCtx.fillRect(0, 0, w, h);
+        // Only draw the combined mask image on top if at least one mask is active
+        const includeMask = toggleMask ? toggleMask.checked : false;
+        const includeUnionMask = toggleUnionMask ? toggleUnionMask.checked : false;
+        if(includeMask || includeUnionMask) {
+            persistentMaskCtx.drawImage(combinedMaskImage, 0, 0, w, h);
+        }
+        // Update the visible combined mask
+        combinedMaskImage.src = persistentMaskCanvas.toDataURL();
+        localApplyCutoff();
+        //combinedMaskImage.style.display = 'block'
+    }
+
+    // On image load, set canvas dimensions and update the mask.
+    image.onload = () => {
+        const w = image.naturalWidth, h = image.naturalHeight;
+        // Set up all canvases.
+        canvas.width = w;
+        canvas.height = h;
+        drawingCanvas.width = w;
+        drawingCanvas.height = h;
+        persistentMaskCanvas.width = w;
+        persistentMaskCanvas.height = h;
+        
+        image.width = w;
+        image.height = h;
+
+        // Set DEM image to same size as the main image.
+        let demImage = document.getElementById('dem-image');
+        if (demImage) {
+            demImage.style.width = "auto";
+            demImage.style.height = "auto";
+        }
+
+        if(!persistentCanvasSeeded){
+            updateCombinedMask();
+            persistentCanvasSeeded = true;
+        }
+            
+
+
+        
+    };
+
+    widthSlider.addEventListener('input', () => {
+        image.width = widthSlider.value;
+        image.height = widthSlider.value * (image.naturalHeight / image.naturalWidth);
+        canvas.width = image.width;
+        canvas.height = image.height;
+        if (drawingCanvas) {
+            drawingCanvas.width = image.width;
+            drawingCanvas.height = image.height;
+        }
+
+        if (combinedMaskImage) {
+            combinedMaskImage.style.width = image.width + "px";
+            combinedMaskImage.style.height = image.height + "px";
+        }
+    });
+
+    canvas.addEventListener('mousedown', (e) => {
+        if(currentMode !== 'segmentation') {
+            return;
+        }
+        const rect = canvas.getBoundingClientRect();
+        startX = (e.clientX - rect.left);
+        startY = (e.clientY - rect.top);
+        isDrawing = true;
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+        if (currentMode !== 'segmentation') {
+            return;
+        }
+        if (isDrawing) {
+            const rect = canvas.getBoundingClientRect();
+            endX = (e.clientX - rect.left);
+            endY = (e.clientY - rect.top);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(startX, startY, endX - startX, endY - startY);
+        }
+    });
+
+    canvas.addEventListener('mouseup', (e) => {
+        if(currentMode !== 'segmentation') {
+            return;
+        }
+        isDrawing = false;
+        const rect = canvas.getBoundingClientRect();
+        endX = (e.clientX - rect.left) * (image.naturalWidth / rect.width);
+        endY = (e.clientY - rect.top) * (image.naturalHeight / rect.height);
+        startX = startX * (image.naturalWidth / rect.width);
+        startY = startY * (image.naturalHeight / rect.height);
+        document.getElementById('x1').value = Math.min(startX, endX);
+        document.getElementById('y1').value = Math.min(startY, endY);
+        document.getElementById('x2').value = Math.max(startX, endX);
+        document.getElementById('y2').value = Math.max(startY, endY);
+    });
+
+    canvas.addEventListener('mouseout', (e) => {
+        if(currentMode !== 'segmentation') {
+            return;
+        }
+        isDrawing = false;
+        //const rect = canvas.getBoundingClientRect();
+        //endX = (e.clientX - rect.left) * (image.naturalWidth / rect.width);
+        //endY = (e.clientY - rect.top) * (image.naturalHeight / rect.height);
+        //startX = startX * (image.naturalWidth / rect.width);
+        //startY = startY * (image.naturalHeight / rect.height);
+        //document.getElementById('x1').value = Math.min(startX, endX);
+        //document.getElementById('y1').value = Math.min(startY, endY);
+        //document.getElementById('x2').value = Math.max(startX, endX);
+        //document.getElementById('y2').value = Math.max(startY, endY);
+    });
+
+    function validateForm() {
+        const x1 = document.getElementById('x1').value;
+        const y1 = document.getElementById('y1').value;
+        const x2 = document.getElementById('x2').value;
+        const y2 = document.getElementById('y2').value;
+        if (x1 === '' || y1 === '' || x2 === '' || y2 === '') {
+            alert('Please draw a bounding box before submitting.');
+            return false;
+        }
+        return true;
+    }
+    
+    if(toggleMask){
+        toggleMask.addEventListener('change', () => {
+            if (toggleMask.checked) {
+                maskImage.style.display = 'block';
+            } else {
+                maskImage.style.display = 'none';
+            }
+        });
+    }
+
+    if (saveMaskButton) {
+        saveMaskButton.addEventListener('click', () => {
+            // Get the combined mask data URL from the persistent canvas display
+            const maskDataUrl = combinedMaskImage.src;
+            fetch('{{ url_for("save_mask", filename=filename) }}', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    mask_data: maskDataUrl
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if(data.redirect) {
+                    window.location.href = data.redirect;
+                } else {
+                    console.error("Error saving mask:", data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        });
+    }
+
+    if(drawingCanvas){
+        // Drawing and erasing on the drawing canvas
+        drawingCanvas.addEventListener('mousedown', (e) => {
+            if (currentMode !== 'mask-editing') {
+                return;
+            }
+            const rect = drawingCanvas.getBoundingClientRect();
+            startX = e.clientX - rect.left;
+            startY = e.clientY - rect.top;
+            // For drawing mode (adding mask) use white; for erase mode use black
+            drawingCtx.strokeStyle = drawMode ? 'white' : 'black';
+            // Set composite operation for drawing vs erasing
+            drawingCtx.globalCompositeOperation = 'source-over';
+            isDrawing = true;
+        });
+
+        drawingCanvas.addEventListener('mousemove', (e) => {
+            if (currentMode !== 'mask-editing') {
+                return;
+            }
+            if (isDrawing) {
+                const rect = drawingCanvas.getBoundingClientRect();
+                endX = e.clientX - rect.left;
+                endY = e.clientY - rect.top;
+                drawingCtx.lineWidth = 5;
+                drawingCtx.lineCap = 'round';
+                drawingCtx.beginPath();
+                drawingCtx.moveTo(startX, startY);
+                drawingCtx.lineTo(endX, endY);
+                drawingCtx.stroke();
+                startX = endX;
+                startY = endY;
+            }
+        });
+
+        drawingCanvas.addEventListener('mouseup', () => {
+            if (currentMode !== 'mask-editing') return;
+            if (!isDrawing) return;
+
+            isDrawing = false;
+
+            // Push a snapshot before merging the stroke (to allow undoing the stroke)
+            pushHistorySnapshot();
+
+            // Merge the transient drawing into the persistent canvas
+            persistentMaskCtx.globalCompositeOperation = 'source-over';
+            persistentMaskCtx.drawImage(drawingCanvas, 0, 0, persistentMaskCanvas.width, persistentMaskCanvas.height);
+
+            // Push a snapshot after the merge (deduplication prevents duplicates)
+            pushHistorySnapshot();
+
+            // Clear the drawing canvas
+            drawingCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
+
+            // Update the combined mask image
+            if (combinedMaskImage) {
+                combinedMaskImage.src = persistentMaskCanvas.toDataURL();
+                combinedMaskImage.style.display = 'block';
+            }
+
+            localApplyCutoff();
+        });
+
+        drawingCanvas.addEventListener('mouseout', () => {
+            if (currentMode !== 'mask-editing') {
+                return;
+            }
+            isDrawing = false;
+        });
+
+        drawModeButton.addEventListener('click', () => {
+            if (currentMode !== 'mask-editing') {
+                return;
+            }
+            drawMode = true;
+            isDrawing = false; // Reset the isDrawing flag
+            drawModeButton.classList.add('active');
+            eraseModeButton.classList.remove('active');
+            fillButton.classList.remove('active');
+        });
+
+        eraseModeButton.addEventListener('click', () => {
+            if (currentMode !== 'mask-editing') {
+                return;
+            }
+            drawMode = false;
+            drawModeButton.classList.remove('active');
+            eraseModeButton.classList.add('active');
+            fillButton.classList.remove('active');
+        });
+    }
+
+    function undoLastStroke() {
+        if (strokeHistory.length < 2) {
+            // If there's only one state (or none), revert to the initial state
+            alert("Nothing to undo!");
+            return;
+        }
+        // Remove the most recent stroke state
+        strokeHistory.pop();
+        // Get the last saved state.
+        const previousStateDataUrl = strokeHistory[strokeHistory.length - 1];
+
+        // Create an image element to load the snapshot
+        let previousStateImage = new Image();
+        previousStateImage.onload = () => {
+            // Clear and restore persistent canvas with the previous state
+            persistentMaskCtx.globalCompositeOperation = 'source-over';
+            persistentMaskCtx.clearRect(0, 0, persistentMaskCanvas.width, persistentMaskCanvas.height);
+            persistentMaskCtx.drawImage(previousStateImage, 0, 0, persistentMaskCanvas.width, persistentMaskCanvas.height);
+            // Update the visible combined mask image
+            combinedMaskImage.src = persistentMaskCanvas.toDataURL();
+            localApplyCutoff();
+        };
+        previousStateImage.src = previousStateDataUrl;
+    }
+
+    
+    if (undoButton) {
+        undoButton.addEventListener('click', undoLastStroke);
+    }
+</script>
+<script>
+// Flood fill helper functions
+
+// Compare a pixel color to the target color with tolerance
+function matchColor(data, idx, color, tolerance) {
+    tolerance = tolerance || 0;
+    return (
+      Math.abs(data[idx] - color[0]) <= tolerance &&
+      Math.abs(data[idx + 1] - color[1]) <= tolerance &&
+      Math.abs(data[idx + 2] - color[2]) <= tolerance &&
+      Math.abs(data[idx + 3] - color[3]) <= tolerance
+    );
+  }
+
+  function colorPixel(data, idx, color) {
+    data[idx] = color[0];
+    data[idx + 1] = color[1];
+    data[idx + 2] = color[2];
+    data[idx + 3] = color[3];
+  }
+
+// Flood fill using a stack with tolerance added
+function floodFill(context, startX, startY, fillColor, tolerance) {
+    tolerance = tolerance || 10;
+    const canvas = context.canvas;
+    const width = canvas.width;
+    const height = canvas.height;
+    const imgData = context.getImageData(0, 0, width, height);
+    const data = imgData.data;
+
+    startX = Math.floor(startX);
+    startY = Math.floor(startY);
+    const startIdx = (startY * width + startX) * 4;
+    const targetColor = [
+      data[startIdx],
+      data[startIdx + 1],
+      data[startIdx + 2],
+      data[startIdx + 3]
+    ];
+
+    // If the fill color is essentially the target, do nothing.
+    if (matchColor([fillColor[0], fillColor[1], fillColor[2], fillColor[3]], 0, targetColor, tolerance)) {
+      return;
+    }
+
+    const pixelStack = [[startX, startY]];
+
+    while (pixelStack.length) {
+      let newPos = pixelStack.pop();
+      let x = newPos[0];
+      let y = newPos[1];
+      let idx = (y * width + x) * 4;
+
+      while (y >= 0 && matchColor(data, idx, targetColor, tolerance)) {
+        y--;
+        idx -= width * 4;
+      }
+      y++;
+      idx += width * 4;
+
+      let reachLeft = false;
+      let reachRight = false;
+      while (y < height && matchColor(data, idx, targetColor, tolerance)) {
+        colorPixel(data, idx, fillColor);
+
+        if (x > 0) {
+          if (matchColor(data, idx - 4, targetColor, tolerance)) {
+            if (!reachLeft) {
+              pixelStack.push([x - 1, y]);
+              reachLeft = true;
+            }
+          } else {
+            reachLeft = false;
+          }
+        }
+
+        if (x < width - 1) {
+          if (matchColor(data, idx + 4, targetColor, tolerance)) {
+            if (!reachRight) {
+              pixelStack.push([x + 1, y]);
+              reachRight = true;
+            }
+          } else {
+            reachRight = false;
+          }
+        }
+        y++;
+        idx += width * 4;
+      }
+    }
+    context.putImageData(imgData, 0, 0);
+  }
+
+// When the fill-button is clicked, add a one-time click event to the drawing canvas to perform the fill.
+fillButton.addEventListener('click', function(){
+    eraseModeButton.classList.remove('active');
+    drawModeButton.classList.remove('active');
+    fillButton.classList.add('active');
+
+    function onFillClick(e) {
+
+        fillButton.classList.remove('active');
+        if(drawMode){
+            drawModeButton.classList.add('active');
+            eraseModeButton.classList.remove('active');
+        } else {
+            eraseModeButton.classList.add('active');
+            drawModeButton.classList.remove('active');
+        }
+        // Remove the temporary click handler and restore button states
+        drawingCanvas.removeEventListener('click', onFillClick);
+
+        const rect = drawingCanvas.getBoundingClientRect();
+        // click position relative to drawingCanvas
+        const clickX = e.clientX - rect.left;
+        const clickY = e.clientY - rect.top;
+
+        // Map coords to persistentMaskCanvas scale
+        const scaleX = persistentMaskCanvas.width / drawingCanvas.width;
+        const scaleY = persistentMaskCanvas.height / drawingCanvas.height;
+        const canvasX = Math.floor(clickX * scaleX);
+        const canvasY = Math.floor(clickY * scaleY);
+
+        // Create a temporary canvas and copy the current persistent mask into it
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = persistentMaskCanvas.width;
+        tempCanvas.height = persistentMaskCanvas.height;
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCtx.drawImage(persistentMaskCanvas, 0, 0);
+
+        // Apply cutoff threshold to produce a binary mask on tempCtx
+        const cutoff = cutoffSlider ? parseInt(cutoffSlider.value) : 50;
+        const thresh = Math.round(cutoff / 100 * 255);
+        const imgData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+        const data = imgData.data;
+        for (let i = 0; i < data.length; i += 4) {
+            // assume grayscale stored in R=G=B
+            const val = data[i];
+            const bin = (val > thresh) ? 255 : 0;
+            data[i] = bin;
+            data[i+1] = bin;
+            data[i+2] = bin;
+            data[i+3] = 255;
+        }
+        tempCtx.putImageData(imgData, 0, 0);
+
+        // Perform flood fill on the binary temp canvas
+        floodFill(tempCtx, canvasX, canvasY, [255,255,255,255], 0);
+
+        // Copy the result back into the persistent canvas (overwrite)
+        persistentMaskCtx.clearRect(0, 0, persistentMaskCanvas.width, persistentMaskCanvas.height);
+        persistentMaskCtx.drawImage(tempCanvas, 0, 0);
+
+        combinedMaskImage.src = persistentMaskCanvas.toDataURL();
+
+        // Push a snapshot after the fill
+        pushHistorySnapshot();
+        //strokeHistory.push(persistentMaskCanvas.toDataURL());
+        
+        localApplyCutoff();
+        combinedMaskImage.style.display = 'block';
+
+    }
+
+    // add one-time listener for the fill click
+    drawingCanvas.addEventListener('click', onFillClick);
+});
+
+// Tooltip functionality
+const tooltip = document.getElementById('tooltip');
+document.querySelectorAll('button[data-tooltip]').forEach(btn => {
+    btn.addEventListener('mouseenter', (e) => {
+        const text = btn.getAttribute('data-tooltip');
+        tooltip.textContent = text;
+        // Get the button's bounding rectangle
+        const rect = btn.getBoundingClientRect();
+        // Position the tooltip to the right of the button, with a slight offset
+        tooltip.style.left = (rect.right + 10) + "px";
+        tooltip.style.top = rect.top + "px";
+        tooltip.style.display = 'block';
+    });
+    btn.addEventListener('mouseleave', () => {
+        tooltip.style.display = 'none';
+        tooltip.textContent = '';
+    });
+});
+
+// Global variables to track segmentation method and timer
+let segmentationStartTime = null;
+let segmentationMethod = null;
+
+// Listen for user's segmentation method selection.
+/*const startModelBtn = document.getElementById('start-model-segmentation');
+const startManualBtn = document.getElementById('start-manual-segmentation');*/
+
+// On page load, restore timer data if exists in localStorage
+/*document.addEventListener("DOMContentLoaded", function() {
+    const currentFilename = "{{ filename }}";
+    if (localStorage.getItem('currentImageFilename') !== currentFilename) {
+        // A new image is loaded, so clear old timer data.
+        localStorage.removeItem('segmentationStartTime');
+        localStorage.removeItem('segmentationMethod');
+        localStorage.setItem('currentImageFilename', currentFilename);
+    }
+    const storedStartTime = localStorage.getItem('segmentationStartTime');
+    const storedMethod = localStorage.getItem('segmentationMethod');
+    if (storedStartTime && storedMethod) {
+        segmentationStartTime = parseInt(storedStartTime);
+        segmentationMethod = storedMethod;
+        // Optionally restart the timer display on the corresponding button.
+        if (segmentationMethod === 'model' && startModelBtn) {
+            startModelBtn.classList.add('active-timer');
+            updateTimer(startModelBtn, segmentationStartTime);
+        } else if (segmentationMethod === 'manual' && startManualBtn) {
+            startManualBtn.classList.add('active-timer');
+            updateTimer(startManualBtn, segmentationStartTime);
+        }
+    }
+});
+
+// Global variable to hold the current timer interval ID.
+let currentTimerIntervalId = null;
+
+function updateTimer(button, startTime) {
+    // Clear any existing interval before starting a new one.
+    if (currentTimerIntervalId) {
+        clearInterval(currentTimerIntervalId);
+    }
+    currentTimerIntervalId = setInterval(() => {
+        if (!button.classList.contains('active-timer')) {
+            clearInterval(currentTimerIntervalId);
+            return;
+        }
+        const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+        button.textContent = `${elapsedSeconds}s`;
+    }, 1000);
+}
+
+if(startModelBtn) {
+    startModelBtn.addEventListener('click', () => {
+        segmentationMethod = 'model';
+        segmentationStartTime = Date.now();
+        // Save timer data to localStorage
+        localStorage.setItem('segmentationStartTime', segmentationStartTime);
+        localStorage.setItem('segmentationMethod', segmentationMethod);
+        // Set text to initialize timer
+        startModelBtn.textContent = "Timer: 0s";
+        // Mark style as active
+        startModelBtn.classList.add('active-timer');
+        if(startManualBtn) {
+            startManualBtn.classList.remove('active-timer');
+            startManualBtn.textContent = "Use Manual"; // Reset text if needed
+        }
+        console.log("Model segmentation started at:", segmentationStartTime);
+        updateTimer(startModelBtn, segmentationStartTime);
+    });
+}
+
+if(startManualBtn) {
+    startManualBtn.addEventListener('click', () => {
+        segmentationMethod = 'manual';
+        segmentationStartTime = Date.now();
+        // Save timer data to localStorage
+        localStorage.setItem('segmentationStartTime', segmentationStartTime);
+        localStorage.setItem('segmentationMethod', segmentationMethod);
+        // Set text to initialize timer
+        startManualBtn.textContent = "Timer: 0s";
+        // Mark style as active
+        startManualBtn.classList.add('active-timer');
+        if(startModelBtn) {
+            startModelBtn.classList.remove('active-timer');
+            startModelBtn.textContent = "Use Model"; // Reset text if needed
+        }
+        console.log("Manual segmentation started at:", segmentationStartTime);
+        updateTimer(startManualBtn, segmentationStartTime);
+    });
+}*/
+
+// Mark as Completed button functionality (Complete segmentation)
+const toggleCompletionBtn = document.getElementById('toggle-completion-btn');
+//toggleCompletionBtn.addEventListener('click', function() {
+//    if(!segmentationStartTime || !segmentationMethod) {
+//        alert("Please select a segmentation method before completing.");
+//        return;
+//    }
+//    const segmentationEndTime = Date.now(); // capture end time now
+//    // Prepare the payload including start and end times.
+//    fetch("{{ url_for('toggle_completion') }}", {
+//        method: "POST",
+//        headers: { "Content-Type": "application/json" },
+//        body: JSON.stringify({ 
+//            filename: "{{ filename }}",
+//            segmentationMethod: segmentationMethod,
+//            segmentationStartTime: segmentationStartTime, // in ms
+//            segmentationEndTime: segmentationEndTime   // in ms
+//        })
+//    })
+//    .then(response => response.json())
+//    .then(data => {
+//        if(data.success) {
+//            if(data.completed) {
+//                toggleCompletionBtn.textContent = "Completed";
+//                toggleCompletionBtn.setAttribute('data-tooltip', 'Completed');
+//                console.log("Image marked as completed.");
+//                // After confirming segmentation is completed:
+//                localStorage.removeItem('segmentationStartTime');
+//                localStorage.removeItem('segmentationMethod');
+//            } else {
+//                toggleCompletionBtn.textContent = "Not Completed";
+//                toggleCompletionBtn.setAttribute('data-tooltip', 'Not Completed');
+//                console.log("Image marked as not completed.");
+//            }
+//        }
+//    })
+//    .catch(error => {
+//        console.error("Error toggling image completion:", error);
+//    });
+//});
+
+
+if (toggleCompletionBtn) {
+      toggleCompletionBtn.addEventListener('click', function() {
+        fetch("{{ url_for('toggle_completion') }}", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename: "{{ filename }}" })
+        })
+        .then(response => response.json())
+        .then(data => {
+          if (data.success) {
+            if (data.completed) {
+              toggleCompletionBtn.textContent = "Completed";
+              toggleCompletionBtn.setAttribute('data-tooltip', 'Completed');
+            } else {
+              toggleCompletionBtn.textContent = "Not Completed";
+              toggleCompletionBtn.setAttribute('data-tooltip', 'Not Completed');
+            }
+          } else {
+            console.error("Toggle completion failed:", data);
+            alert("Could not update completion state on the server.");
+          }
+        })
+        .catch(error => {
+          console.error("Error toggling image completion:", error);
+          alert("Network error while updating completion state.");
+        });
+      });
+    }
+
+</script>
+{% endblock %}

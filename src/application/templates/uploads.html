@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+
+{% block title %}Uploaded Files - Avalanche Segmentation{% endblock %}
+
+{% block head %}
+    {{ super() }}
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
+    <style>
+        .rgb-widget {
+            position: relative;
+            display: inline-block;
+        }
+        .widget-controls {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            display: flex;
+            flex-direction: column; /* Stack the buttons vertically */
+            gap: 5px;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 5px;
+            border-radius: 3px;
+        }
+        .widget-controls button,
+        .widget-controls span {
+            color: #fff;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            padding: 2px 4px;       /* Reduced padding for a smaller button */
+            font-size: 16px;        /* Adjust the font size of the icon if needed */
+            line-height: 1;
+        }
+        .widget-controls button:hover,
+        .widget-controls span:hover {
+            opacity: 0.8;
+        }
+
+        /* Tooltip styling */
+        #tooltip {
+            position: fixed;
+            /* Remove fixed right/top so that our dynamic positioning isn't overridden */
+            /* right: 20px;
+            top: 50%;
+            transform: translateY(-50%); */
+            background: rgba(0,0,0,0.8);
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 14px;
+            display: none;
+            z-index:  1000; /* Ensure tooltip is above other elements */
+            white-space: nowrap;    /* Prevents the tooltip text from wrapping */
+            max-width: 200px;       /* Limit the width if needed */
+        }
+    </style>
+{% endblock %}
+
+{% macro widget(filename, all_files, file_states) %} 
+    {# Compute the base name by removing the '_rgb.png' part #}
+    {% set base = filename[:-8] %}
+    {% set mask_filename = base ~ '_rgb_mask.png' %}
+    {% set dem_filename = base ~ '_dem.tif' %}
+<div class="rgb-widget" data-filename="{{ filename }}">
+    <a href="{{ url_for('view_image', filename=filename) }}">
+        <img id="rgb-{{ filename }}" src="{{ url_for('uploaded_file', filename=filename) }}"
+             alt="{{ filename }}" style="max-width:512px; max-height:512px; display: block;">
+        {% if mask_filename in all_files %}
+            <img id="mask-{{ filename }}" src="{{ url_for('uploaded_file', filename=mask_filename) }}"
+                 alt="Mask" style="position: absolute; top: 0; left: 0; max-width:512px; max-height:512px; display: none; opacity: 0.5;">
+        {% endif %}
+    </a>
+    <div class="widget-controls">
+        <button class="mark-completed-btn" data-filename="{{ filename }}">
+            {% if file_states.get(filename) and file_states[filename].completed %}
+                <i class="fa-solid fa-square-check" data-tooltip="Completed"></i>
+            {% else %}
+                <i class="fa-solid fa-square-xmark"data-tooltip="Not Completed"></i>
+            {% endif %}
+        </button>
+        {% if mask_filename in all_files %}
+            <button class="toggle-mask-btn" data-target="{{ filename }}" data-tooltip="View Mask">
+                <i class="fa-solid fa-eye"></i>
+            </button>
+        {% endif %}
+        {% if dem_filename in all_files %}
+            <span class="dem-indicator" data-tooltip="DEM">
+              <i class="fa-solid fa-mountain"></i>
+            </span>
+        {% endif %}
+        {# Display segmentation duration as an icon with tooltip #}
+        {% if file_states.get(filename) and file_states[filename].segmentation_duration %}
+            <span class="time-icon" data-tooltip="Time: {{ file_states[filename].segmentation_duration }} s">
+                <i class="fa-solid fa-clock"></i>
+            </span>
+        {% endif %}
+    </div>
+    
+</div>
+{% endmacro %}
+
+{% block side_menu %}
+<p>View and manage your uploaded files.</p>
+<!-- Sort controls -->
+<div class="sort-controls">
+  <form method="GET" action="{{ url_for('uploaded_files') }}">
+    <label for="sort-select">Sort by:</label>
+    <select name="sort" id="sort-select" onchange="this.form.submit()">
+      <option value="all" {% if request.args.get('sort', 'all') == 'all' %}selected{% endif %}>Default</option>
+      <option value="completed" {% if request.args.get('sort') == 'completed' %}selected{% endif %}>Completed First</option>
+      <option value="pending" {% if request.args.get('sort') == 'pending' %}selected{% endif %}>Pending First</option>
+    </select>
+  </form>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Tooltip container -->
+<div id="tooltip"></div>
+<h1>Uploaded Files</h1>
+<ul>
+    {% for file in files %}
+        {% if file.endswith('_rgb.png') %}
+            <li>
+                {{ widget(file, files, file_states) }}
+            </li>
+        {% endif %}
+    {% endfor %}
+</ul>
+
+<script>
+    // When the DOM is ready, attach event handlers
+    document.addEventListener("DOMContentLoaded", function(){
+      // Toggle Completed state event handler.
+      document.querySelectorAll(".mark-completed-btn").forEach(function(btn){
+        btn.addEventListener("click", function(){
+          var filename = btn.getAttribute("data-filename");
+          fetch("{{ url_for('toggle_completion') }}", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ filename: filename })
+          }).then(function(response){
+            return response.json();
+          }).then(function(data){
+            if(data.success) {
+              if(data.completed) {
+                btn.innerHTML = "<i class='fa-solid fa-square-check' data-tooltip='Completed'></i>";
+                console.log("Marked " + filename + " as completed.");
+              } else {
+                btn.innerHTML = "<i class='fa-solid fa-square-xmark' data-tooltip='Not Completed'></i>";
+                console.log("Reverted " + filename + " to ongoing.");
+              }
+            }
+          }).catch(function(error){
+            console.error("Error toggling state:", error);
+          });
+        });
+      });
+      
+      // Toggle mask overlay event handler.
+      document.querySelectorAll(".toggle-mask-btn").forEach(function(btn){
+        btn.addEventListener("click", function(){
+          var target = btn.getAttribute("data-target");
+          var maskImg = document.getElementById("mask-" + target);
+          if(maskImg) {
+            if(maskImg.style.display === "block") {
+                maskImg.style.display = "none";
+                btn.innerHTML = "<i class='fa-solid fa-eye'></i>";
+                console.log("Mask hidden for: " + target);
+            } else {
+                maskImg.style.display = "block";
+                btn.innerHTML = "<i class='fa-solid fa-eye-slash'></i>";
+                console.log("Mask visible for: " + target);
+            }
+        }
+        });
+      });
+    });
+
+    // Tooltip functionality
+    const tooltip = document.getElementById('tooltip');
+    document.body.addEventListener('mouseover', function(e) {
+        let target = e.target.closest('[data-tooltip]');
+        if(target) {
+            const text = target.getAttribute('data-tooltip');
+            tooltip.textContent = text;
+            tooltip.style.display = 'block';
+
+            const rect = target.getBoundingClientRect();
+            const tooltipRect = tooltip.getBoundingClientRect();
+
+            tooltip.style.left = (rect.right + 10) + "px"; // 10px offset to the right
+            tooltip.style.top = (rect.top + (rect.height / 2) - (tooltipRect.height / 2)) + "px";
+        }
+    });
+
+    document.body.addEventListener('mouseout', function(e) {
+        let target = e.target.closest('[data-tooltip]');
+        if(target) {
+            tooltip.style.display = 'none';
+            tooltip.textContent = '';
+        }
+    });
+</script>
+{% endblock %}
+
