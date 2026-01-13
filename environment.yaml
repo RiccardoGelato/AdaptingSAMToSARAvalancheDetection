@@ -1,0 +1,38 @@
+name: avalanche_env
+channels:
+  - pytorch
+  - nvidia                    # remove for cpu installation
+  - conda-forge
+  - defaults
+dependencies:
+  - python
+  - numpy
+  - matplotlib
+  - pytorch
+  - torchvision
+  - pytorch-cuda        # remove for cpu installation
+  - torchinfo
+  - lightning
+  - numba
+  - scikit-learn
+  - conda-forge::transformers
+  - pandas
+  - pip
+  - pip:
+      - neptune
+      - omegaconf
+      - opencv-python
+      - pycocotools
+      - onnxruntime 
+      - onnx
+      - Flask
+      - flask_sqlalchemy
+      - tifffile
+      - pytest
+      - rasterio
+      - monai
+      # Notebooks ########### (optional)
+      - jupyterlab
+      # From source
+      - git+https://github.com/facebookresearch/segment-anything.git
+         

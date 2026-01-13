@@ -1,0 +1,14 @@
+# Path Configuration
+paths:
+  data: "./data/" # Substitute with your data directory
+  sam_checkpoint: "./weights/sam/sam_vit_b_01ec64.pth" # Path to SAM checkpoint
+  checkpoints: "./checkpoints/" # Directory to save model checkpoints
+  # The specific models to be loaded
+  checkpoint_vv: "./checkpoints/firstencoder"
+  checkpoint_vh: "./checkpoints/secondencoder"
+
+neptune:
+  project: "your-username/your-project-name"
+  api_token: ""  # Leave empty if using environment variables
+  log_model_checkpoints: True
+  tags: ["sam-adapter", "avalanche-detection"]
