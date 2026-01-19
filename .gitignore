@@ -1,2 +1,6 @@
 code/model/sam_vit_b_01ec64.pth
 code/model/sam_vit_l_0b3195.pth
+src/model/sam_vit_b_01ec64.pth
+src/model/sam_vit_l_0b3195.pth
+src/application/instance/files.db
+.vscode/settings.json
